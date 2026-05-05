@@ -201,6 +201,36 @@ void ws_broadcast_runtime_updated(void)
     cJSON_Delete(msg);
 }
 
+void ws_broadcast_mqtt_message_received(const char *topic, int topic_len,
+                                        const char *payload, int payload_len)
+{
+    char topic_buf[128] = {0};
+    char payload_buf[512] = {0};
+
+    if (topic && topic_len > 0) {
+        int n = topic_len;
+        if (n > (int)sizeof(topic_buf) - 1) n = (int)sizeof(topic_buf) - 1;
+        memcpy(topic_buf, topic, n);
+        topic_buf[n] = '\0';
+    }
+
+    if (payload && payload_len > 0) {
+        int n = payload_len;
+        if (n > (int)sizeof(payload_buf) - 1) n = (int)sizeof(payload_buf) - 1;
+        memcpy(payload_buf, payload, n);
+        payload_buf[n] = '\0';
+    }
+
+    cJSON *msg  = make_msg("mqtt.message.received");
+    cJSON *data = cJSON_AddObjectToObject(msg, "data");
+    cJSON_AddStringToObject(data, "topic", topic_buf);
+    cJSON_AddStringToObject(data, "payload", payload_buf);
+    cJSON_AddBoolToObject(data, "truncated", payload_len > (int)sizeof(payload_buf) - 1);
+    cJSON_AddNumberToObject(data, "payload_len", payload_len);
+    broadcast_json(msg);
+    cJSON_Delete(msg);
+}
+
 void ws_broadcast_settings_updated(void)
 {
     cJSON *msg  = make_msg("settings.updated");

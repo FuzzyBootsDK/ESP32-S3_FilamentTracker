@@ -3290,6 +3290,23 @@ nav.sidebar ul li a .nav-icon {
     font-weight: 900;
     margin: 0 0 10px;
     color: var(--text);
+
+.mqtt-log-terminal {
+    margin: 0;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #0b0f16;
+    color: #c7f0d8;
+    padding: 10px;
+    min-height: 220px;
+    max-height: 320px;
+    overflow-y: auto;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
 }
 
 .form-row {

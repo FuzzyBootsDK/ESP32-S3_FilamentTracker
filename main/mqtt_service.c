@@ -278,7 +278,7 @@ static void parse_bambu_print(const cJSON *print)
 static void handle_message(const char *topic, int topic_len,
                             const char *data, int data_len)
 {
-    (void)topic; (void)topic_len;
+    ws_broadcast_mqtt_message_received(topic, topic_len, data, data_len);
 
     cJSON *root = cJSON_ParseWithLength(data, data_len);
     if (!root) return;

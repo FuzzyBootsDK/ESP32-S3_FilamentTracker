@@ -17,5 +17,7 @@ void ws_broadcast_inventory_deleted(const char *type_id);
 void ws_broadcast_ams_updated(const char *ams_id, int slot);
 void ws_broadcast_mqtt_status_updated(void);
 void ws_broadcast_runtime_updated(void);
+void ws_broadcast_mqtt_message_received(const char *topic, int topic_len,
+										const char *payload, int payload_len);
 void ws_broadcast_settings_updated(void);
 void ws_broadcast_storage_saved(void);
