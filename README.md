@@ -792,3 +792,4 @@ Confirm the baud rate is set to **115200** in PlatformIO's monitor settings (`mo
 
 *Filament Tracker — ESP32-S3 Edition*
 *Open-source. Built with ESP-IDF, LittleFS, cJSON, and Vanilla JS.*
+# ESP32-S3_FilamentTracker
