@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-store">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings — Filament Tracker</title>
+  <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+<script>document.body.classList.add(localStorage.getItem('ft_theme')||'dark');</script>
+
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <h1>🧵 Filament Tracker</h1>
+      <div class="subtitle">ESP32-S3</div>
+    </div>
+    <div class="sidebar-printer">
+      <div class="printer-status">
+        <span class="status-dot"></span>
+        <span class="printer-info">Printer offline</span>
+      </div>
+    </div>
+    <ul>
+      <li><a href="/index.html"><span class="nav-icon">📦</span> Inventory</a></li>
+      <li><a href="/add-filament.html"><span class="nav-icon">➕</span> Add Filament</a></li>
+      <li><a href="/ams.html"><span class="nav-icon">🔗</span> AMS</a></li>
+      <li><a href="/mqtt.html"><span class="nav-icon">📡</span> MQTT</a></li>
+      <li><a href="/settings.html"><span class="nav-icon">⚙️</span> Settings</a></li>
+      <li><a href="/help.html"><span class="nav-icon">❓</span> Help</a></li>
+    </ul>
+    <div class="sidebar-footer">
+      <div class="ws-indicator">
+        <span class="status-dot"></span>
+        <span>Connecting…</span>
+      </div>
+    </div>
+  </nav>
+
+  <main class="content">
+    <div class="page-header">
+      <h2>⚙️ Settings</h2>
+      <button class="btn primary" id="save-btn" disabled>💾 Save</button>
+    </div>
+
+    <div id="pg-error"   class="alert alert-error"   style="display:none"></div>
+    <div id="pg-success" class="alert alert-success" style="display:none">Settings saved ✓</div>
+    <p class="muted" id="pg-loading">Loading…</p>
+
+    <!-- All cards hidden until settings load -->
+    <div id="settings-body" style="display:none">
+
+      <!-- Device -->
+      <div class="card settings-section">
+        <div class="settings-section-title">Device</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Device name</label>
+            <input type="text" id="s-device-name">
+          </div>
+          <div class="form-group">
+            <label>Timezone</label>
+            <input type="text" id="s-timezone" placeholder="UTC">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Low stock threshold (g)</label>
+            <input type="number" id="s-low-threshold" min="0" step="10">
+          </div>
+          <div class="form-group">
+            <label>Page size</label>
+            <input type="number" id="s-page-size" min="10" max="100" step="5">
+          </div>
+        </div>
+      </div>
+
+      <!-- Appearance / Themes -->
+      <div class="card settings-section">
+        <div class="settings-section-title">Appearance</div>
+        <div class="themeGrid" id="theme-grid"></div>
+      </div>
+
+      <!-- MQTT -->
+      <div class="card settings-section">
+        <div class="settings-section-title">BambuLab MQTT</div>
+        <div class="form-group">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="s-mqtt-enabled"> Enable MQTT
+          </label>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Broker host (printer IP)</label>
+            <input type="text" id="s-mqtt-host" placeholder="192.168.1.x">
+          </div>
+          <div class="form-group">
+            <label>Port</label>
+            <input type="number" id="s-mqtt-port" min="1" max="65535">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Username</label>
+            <input type="text" id="s-mqtt-user" placeholder="bblp">
+          </div>
+          <div class="form-group">
+            <label>Password / Access code</label>
+            <input type="password" id="s-mqtt-pass" placeholder="(saved)">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Client ID</label>
+            <input type="text" id="s-mqtt-client">
+          </div>
+          <div class="form-group">
+            <label>Topic root</label>
+            <input type="text" id="s-mqtt-topic" placeholder="device/{serial}">
+          </div>
+        </div>
+      </div>
+
+      <!-- Printer -->
+      <div class="card settings-section">
+        <div class="settings-section-title">Printer</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Printer name</label>
+            <input type="text" id="s-printer-name" placeholder="Bambu X1C">
+          </div>
+          <div class="form-group">
+            <label>Serial number</label>
+            <input type="text" id="s-printer-serial">
+          </div>
+        </div>
+      </div>
+
+      <!-- Data Management -->
+      <div class="card settings-section">
+        <div class="settings-section-title">Data Management</div>
+        <div class="mb-4">
+          <p class="muted" style="margin-bottom:.6rem;font-size:.85rem">
+            Import a CSV exported from the original FilamentTracker v2 app. Only 1.75 mm rows are imported.
+          </p>
+          <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+            <input type="file" id="csv-file" accept=".csv,text/csv" style="font-size:.85rem">
+            <button class="btn" id="import-btn">📤 Import CSV</button>
+          </div>
+          <div id="import-result" class="alert" style="display:none;margin-top:.75rem"></div>
+        </div>
+        <hr class="divider">
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:center">
+          <a href="/api/v1/backup/export" class="btn" download="filament-backup.json">📥 Export Backup</a>
+          <span class="muted" style="font-size:.8rem">Full JSON backup of inventory, AMS links and settings.</span>
+        </div>
+      </div>
+
+      <!-- OTA Firmware Update -->
+      <div class="card settings-section">
+        <div class="settings-section-title">Firmware Update (OTA)</div>
+        <div id="ota-info" class="mb-4" style="font-size:.85rem;color:var(--muted)">Loading firmware info…</div>
+        <p class="muted" style="margin-bottom:.6rem;font-size:.85rem">
+          Select a <code>.bin</code> firmware file built with PlatformIO. The device will reboot
+          automatically after a successful flash.
+        </p>
+        <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;margin-bottom:.75rem">
+          <input type="file" id="ota-file" accept=".bin" style="font-size:.85rem">
+          <button class="btn primary" id="ota-btn">⬆ Flash Firmware</button>
+        </div>
+        <!-- Progress bar (hidden until upload starts) -->
+        <div id="ota-progress-wrap" style="display:none;margin-bottom:.75rem">
+          <div class="barWrap" style="height:14px">
+            <div class="bar" id="ota-progress-bar" style="width:0%"></div>
+          </div>
+          <div class="muted" id="ota-progress-label" style="font-size:.82rem;margin-top:4px">0%</div>
+        </div>
+        <div id="ota-result" class="alert" style="display:none"></div>
+      </div>
+
+      <!-- Danger zone -->
+      <div class="card settings-section">
+        <div class="settings-section-title" style="color:var(--danger)">Device</div>
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+          <button class="btn danger" id="restart-btn">🔄 Restart Device</button>
+          <button class="btn danger" id="wifi-reset-btn">📡 Re-configure Wi-Fi</button>
+          <button class="btn danger" id="inventory-reset-btn">🗑️ Clear All Inventory</button>
+        </div>
+        <p class="muted" style="font-size:.8rem;margin-top:.6rem">
+          <strong>Re-configure Wi-Fi</strong> erases stored credentials and reboots the device
+          into provisioning mode. Connect to the <em>FilamentTracker</em> Wi-Fi network to set new credentials.
+          <br><strong>Clear All Inventory</strong> permanently deletes every filament type and spool.
+        </p>
+        <div id="wifi-error" class="alert alert-error" style="display:none;margin-top:.6rem"></div>
+      </div>
+
+    </div><!-- /settings-body -->
+  </main>
+
+  <script src="/js/app.js"></script>
+  <script>
+  (function () {
+    let settings = null;
+    let currentTheme = localStorage.getItem('ft_theme') || 'dark';
+
+    /* ── Theme grid ── */
+    function renderThemeGrid() {
+      document.getElementById('theme-grid').innerHTML = THEME_DEFS.map(t => `
+<button class="themeCard${settings && settings.theme === t.id ? ' selected' : ''}" data-tid="${h(t.id)}">
+  <div class="themeSwatches">${t.swatches.map(c => `<div class="themeSwatch" style="background:${h(c)}"></div>`).join('')}</div>
+  <div class="themeName">${h(t.name)}</div>
+</button>`).join('');
+
+      document.querySelectorAll('.themeCard').forEach(card => {
+        card.addEventListener('click', async () => {
+          const tid = card.dataset.tid;
+          if (!settings) return;
+          settings.theme = tid;
+          currentTheme = tid;
+          applyTheme(tid);
+          await API.patch('/settings/theme', { theme: tid });
+          toast('Theme set to ' + tid);
+          renderThemeGrid();
+        });
+      });
+    }
+
+    /* ── Load into form fields ── */
+    function setForm(s) {
+      document.getElementById('s-device-name').value    = s.device_name || '';
+      document.getElementById('s-timezone').value       = s.timezone    || '';
+      document.getElementById('s-low-threshold').value  = s.low_stock_threshold_grams ?? 100;
+      document.getElementById('s-page-size').value      = s.ui?.page_size ?? 25;
+      document.getElementById('s-mqtt-enabled').checked = s.mqtt?.enabled || false;
+      document.getElementById('s-mqtt-host').value      = s.mqtt?.broker_host  || '';
+      document.getElementById('s-mqtt-port').value      = s.mqtt?.broker_port  || 1883;
+      document.getElementById('s-mqtt-user').value      = s.mqtt?.username     || '';
+      document.getElementById('s-mqtt-client').value    = s.mqtt?.client_id    || '';
+      document.getElementById('s-mqtt-topic').value     = s.mqtt?.topic_root   || '';
+      document.getElementById('s-printer-name').value   = s.printer?.name   || '';
+      document.getElementById('s-printer-serial').value = s.printer?.serial || '';
+    }
+
+    /* ── Collect from form ── */
+    function getForm() {
+      return Object.assign({}, settings, {
+        device_name: document.getElementById('s-device-name').value.trim(),
+        timezone:    document.getElementById('s-timezone').value.trim(),
+        low_stock_threshold_grams: parseInt(document.getElementById('s-low-threshold').value, 10) || 100,
+        ui: Object.assign({}, settings.ui, {
+          page_size: parseInt(document.getElementById('s-page-size').value, 10) || 25,
+        }),
+        mqtt: Object.assign({}, settings.mqtt, {
+          enabled:     document.getElementById('s-mqtt-enabled').checked,
+          broker_host: document.getElementById('s-mqtt-host').value.trim(),
+          broker_port: parseInt(document.getElementById('s-mqtt-port').value, 10) || 1883,
+          username:    document.getElementById('s-mqtt-user').value.trim(),
+          password:    document.getElementById('s-mqtt-pass').value || undefined,
+          client_id:   document.getElementById('s-mqtt-client').value.trim(),
+          topic_root:  document.getElementById('s-mqtt-topic').value.trim(),
+        }),
+        printer: Object.assign({}, settings.printer, {
+          name:   document.getElementById('s-printer-name').value.trim(),
+          serial: document.getElementById('s-printer-serial').value.trim(),
+        }),
+      });
+    }
+
+    /* ── Save ── */
+    document.getElementById('save-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('save-btn');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      const errEl = document.getElementById('pg-error');
+      const okEl  = document.getElementById('pg-success');
+      errEl.style.display = 'none'; okEl.style.display = 'none';
+      const res = await API.put('/settings', getForm());
+      btn.disabled = false; btn.textContent = '💾 Save';
+      if (res.ok) { settings = getForm(); okEl.style.display = ''; toast('Settings saved'); }
+      else { errEl.textContent = res.error?.message || 'Save failed'; errEl.style.display = ''; }
+    });
+
+    /* ── CSV import ── */
+    document.getElementById('import-btn').addEventListener('click', async () => {
+      const file = document.getElementById('csv-file').files[0];
+      if (!file) return;
+      const btn = document.getElementById('import-btn');
+      btn.disabled = true; btn.textContent = 'Importing…';
+      const text = await file.text();
+      const res  = await API.postRaw('/import/csv', text, 'text/csv');
+      btn.disabled = false; btn.textContent = '📤 Import CSV';
+      const el = document.getElementById('import-result');
+      if (res.ok) {
+        el.className = 'alert alert-success';
+        el.textContent = `✓ Imported ${res.data.imported_types} types, ${res.data.imported_spools} spools. Skipped ${res.data.skipped_rows} rows.`;
+        toast(`Imported ${res.data.imported_spools} spools`);
+      } else {
+        el.className = 'alert alert-error';
+        el.textContent = res.error?.message || 'Import failed';
+      }
+      el.style.display = '';
+    });
+
+    /* ── OTA ── */
+    async function loadOTAInfo() {
+      const r = await API.get('/ota/status');
+      if (!r.ok) return;
+      const d = r.data;
+      document.getElementById('ota-info').innerHTML =
+        `<strong>Running:</strong> ${h(d.running_partition)} &nbsp;·&nbsp;
+         <strong>Version:</strong> ${h(d.firmware_version)} &nbsp;·&nbsp;
+         <strong>Built:</strong> ${h(d.build_date)} ${h(d.build_time)} &nbsp;·&nbsp;
+         <strong>Update slot:</strong> ${h(d.update_partition)}`;
+    }
+
+    document.getElementById('ota-btn').addEventListener('click', async () => {
+      const file = document.getElementById('ota-file').files[0];
+      if (!file) { toast('Select a .bin file first', 'error'); return; }
+
+      const btn    = document.getElementById('ota-btn');
+      const wrap   = document.getElementById('ota-progress-wrap');
+      const bar    = document.getElementById('ota-progress-bar');
+      const label  = document.getElementById('ota-progress-label');
+      const result = document.getElementById('ota-result');
+
+      btn.disabled = true; btn.textContent = 'Uploading…';
+      result.style.display = 'none';
+      wrap.style.display = '';
+      bar.style.width = '0%'; label.textContent = '0%';
+
+      try {
+        /* Use XMLHttpRequest for upload progress events */
+        const buf = await file.arrayBuffer();
+        await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', '/api/v1/ota/upload');
+          xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+          xhr.upload.onprogress = e => {
+            if (e.lengthComputable) {
+              const pct = Math.round(e.loaded / e.total * 100);
+              bar.style.width  = pct + '%';
+              label.textContent = pct + '%  (' + Math.round(e.loaded / 1024) + ' / ' + Math.round(e.total / 1024) + ' KB)';
+            }
+          };
+          xhr.onload = () => {
+            try {
+              const res = JSON.parse(xhr.responseText);
+              if (res.ok) {
+                result.className = 'alert alert-success';
+                result.textContent = '✅ ' + (res.data?.message || 'OTA complete — rebooting…');
+              } else {
+                result.className = 'alert alert-error';
+                result.textContent = '❌ ' + (res.error?.message || 'OTA failed');
+              }
+            } catch (_) {
+              result.className = 'alert alert-success';
+              result.textContent = '✅ OTA complete — device is rebooting…';
+            }
+            result.style.display = '';
+            resolve();
+          };
+          xhr.onerror = () => {
+            result.className = 'alert alert-error';
+            result.textContent = '❌ Upload error — check connection';
+            result.style.display = '';
+            reject();
+          };
+          xhr.send(buf);
+        });
+      } finally {
+        btn.disabled = false; btn.textContent = '⬆ Flash Firmware';
+      }
+    });
+
+    /* ── Restart / Wi-Fi reset ── */
+    document.getElementById('restart-btn').addEventListener('click', async () => {
+      if (!confirm('Restart device now?')) return;
+      await API.post('/settings/restart', {});
+      toast('Restarting…');
+    });
+
+    document.getElementById('wifi-reset-btn').addEventListener('click', async () => {
+      if (!confirm('Erase Wi-Fi credentials and reboot into setup mode?')) return;
+      const btn = document.getElementById('wifi-reset-btn');
+      btn.disabled = true; btn.textContent = 'Resetting…';
+      const res = await API.post('/settings/wifi/reset', {});
+      if (res.ok) {
+        toast('Wi-Fi reset — connect to "FilamentTracker" network to re-configure.');
+      } else {
+        const el = document.getElementById('wifi-error');
+        el.textContent = res.error?.message || 'Reset failed';
+        el.style.display = '';
+        btn.disabled = false; btn.textContent = '📡 Re-configure Wi-Fi';
+      }
+    });
+
+    document.getElementById('inventory-reset-btn').addEventListener('click', async () => {
+      if (!confirm('Delete ALL filament types and spools? This cannot be undone.')) return;
+      const res = await API.post('/inventory/reset', {});
+      if (res.ok) toast('Inventory cleared');
+      else toast(res.error?.message || 'Reset failed', 'error');
+    });
+
+    /* ── Init ── */
+    async function init() {
+      initSidebar();
+      try {
+        const r = await API.get('/settings');
+        document.getElementById('pg-loading').style.display = 'none';
+        if (!r.ok) {
+          const el = document.getElementById('pg-error');
+          el.textContent = 'Failed to load settings: ' + (r.error?.message || 'unknown error');
+          el.style.display = '';
+          return;
+        }
+        settings = r.data;
+        setForm(settings);
+        document.getElementById('settings-body').style.display = '';
+        document.getElementById('save-btn').disabled = false;
+        renderThemeGrid();
+        loadOTAInfo();
+      } catch (e) {
+        document.getElementById('pg-loading').style.display = 'none';
+        const el = document.getElementById('pg-error');
+        el.textContent = 'Error loading settings: ' + e.message;
+        el.style.display = '';
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', init);
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-store">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AMS — Filament Tracker</title>
+  <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+<script>document.body.classList.add(localStorage.getItem('ft_theme')||'dark');</script>
+
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <h1>🧵 Filament Tracker</h1>
+      <div class="subtitle">ESP32-S3</div>
+    </div>
+    <div class="sidebar-printer">
+      <div class="printer-status">
+        <span class="status-dot"></span>
+        <span class="printer-info">Printer offline</span>
+      </div>
+    </div>
+    <ul>
+      <li><a href="/index.html"><span class="nav-icon">📦</span> Inventory</a></li>
+      <li><a href="/add-filament.html"><span class="nav-icon">➕</span> Add Filament</a></li>
+      <li><a href="/ams.html"><span class="nav-icon">🔗</span> AMS</a></li>
+      <li><a href="/mqtt.html"><span class="nav-icon">📡</span> MQTT</a></li>
+      <li><a href="/settings.html"><span class="nav-icon">⚙️</span> Settings</a></li>
+      <li><a href="/help.html"><span class="nav-icon">❓</span> Help</a></li>
+    </ul>
+    <div class="sidebar-footer">
+      <div class="ws-indicator">
+        <span class="status-dot"></span>
+        <span>Connecting…</span>
+      </div>
+    </div>
+  </nav>
+
+  <main class="content">
+    <div class="page-header">
+      <h2>🧩 AMS Status</h2>
+    </div>
+
+    <div class="card" style="margin-bottom:1rem">
+      <div class="settings-section-title">Live AMS from MQTT</div>
+      <div id="ams-live-empty" class="muted">No AMS</div>
+      <div id="ams-live-grid" class="ams-live-grid" style="display:none"></div>
+    </div>
+  </main>
+
+  <script src="/js/app.js"></script>
+  <script>
+  (function () {
+    let liveSlots = [];
+
+    function slotKey(s) {
+      return `${s.ams_id || ''}:${s.slot || 0}`;
+    }
+
+    function mergeLiveSlots(incoming) {
+      if (!Array.isArray(incoming) || incoming.length === 0) return;
+      const map = new Map(liveSlots.map(s => [slotKey(s), s]));
+      incoming.forEach(s => map.set(slotKey(s), s));
+      liveSlots = Array.from(map.values()).sort((a, b) => {
+        const aId = String(a.ams_id || '');
+        const bId = String(b.ams_id || '');
+        if (aId !== bId) return aId.localeCompare(bId);
+        return (a.slot || 0) - (b.slot || 0);
+      });
+    }
+
+    function renderLiveAms() {
+      const empty = document.getElementById('ams-live-empty');
+      const grid  = document.getElementById('ams-live-grid');
+      if (!Array.isArray(liveSlots) || liveSlots.length === 0) {
+        empty.style.display = '';
+        grid.style.display = 'none';
+        grid.innerHTML = '';
+        return;
+      }
+
+      empty.style.display = 'none';
+      grid.style.display = '';
+      grid.innerHTML = liveSlots.map(s => {
+        const known = !!s.known;
+        const color = known && s.color_hex ? s.color_hex : '#FFFFFF';
+        const meta = known
+          ? `${s.brand || 'Unknown brand'} • ${s.color_hex || 'Unknown color'}`
+          : 'Unknown color • Unknown brand';
+        return `<div class="ams-live-slot ${known ? '' : 'unknown'}">
+          <div class="ams-live-head">${h(s.ams_id || 'AMS?')} · Slot ${h(s.slot || '?')}</div>
+          <div class="ams-live-row">
+            <span class="ams-live-swatch" style="--ams:${h(color)}"></span>
+            <span class="ams-live-meta">${h(meta)}</span>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    async function loadRuntimeLiveAms() {
+      try {
+        const r = await API.get('/mqtt/runtime');
+        if (r.ok && r.data) {
+          mergeLiveSlots(r.data.ams_slots || []);
+          renderLiveAms();
+        }
+      } catch (_) {
+        /* Non-fatal */
+      }
+    }
+
+    document.addEventListener('ws:message', e => {
+      if (e.detail.type === 'mqtt.runtime.updated') {
+        mergeLiveSlots(e.detail?.data?.ams_slots || []);
+        renderLiveAms();
+      }
+    });
+
+    document.addEventListener('DOMContentLoaded', () => {
+      initSidebar();
+      loadRuntimeLiveAms();
+    });
+  })();
+  </script>
+</body>
+</html>

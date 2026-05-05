@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-store">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MQTT — Filament Tracker</title>
+  <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+<script>
+  (function () {
+    var t = localStorage.getItem('ft_theme') || 'dark';
+    if (t === 'light') t = 'nebula';
+    document.body.classList.add(t);
+  })();
+</script>
+
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <h1>🧵 Filament Tracker</h1>
+      <div class="subtitle">ESP32-S3</div>
+    </div>
+    <div class="sidebar-printer">
+      <div class="printer-status">
+        <span class="status-dot"></span>
+        <span class="printer-info">Printer offline</span>
+      </div>
+      <div class="printer-progress" style="display:none">
+        <div class="printer-progress-bar" style="width:0%"></div>
+      </div>
+    </div>
+    <ul>
+      <li><a href="/index.html"><span class="nav-icon">📦</span> Inventory</a></li>
+      <li><a href="/add-filament.html"><span class="nav-icon">➕</span> Add Filament</a></li>
+      <li><a href="/ams.html"><span class="nav-icon">🔗</span> AMS</a></li>
+      <li><a href="/mqtt.html"><span class="nav-icon">📡</span> MQTT</a></li>
+      <li><a href="/settings.html"><span class="nav-icon">⚙️</span> Settings</a></li>
+      <li><a href="/help.html"><span class="nav-icon">❓</span> Help</a></li>
+    </ul>
+    <div class="sidebar-footer">
+      <div class="ws-indicator">
+        <span class="status-dot"></span>
+        <span>Connecting…</span>
+      </div>
+    </div>
+  </nav>
+
+  <main class="content">
+    <div class="page-header">
+      <h2>📡 MQTT / Printer</h2>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn" id="disconnect-btn" style="display:none">Disconnect</button>
+        <button class="btn primary" id="connect-btn">Connect</button>
+      </div>
+    </div>
+
+    <!-- Connection status -->
+    <div class="card mb-4">
+      <div class="settings-section-title">Connection Status</div>
+      <div class="status-row" style="margin-bottom:.6rem">
+        <span class="status-label">MQTT broker</span>
+        <span class="status-dot" id="broker-dot"></span>
+        <span class="status-value" id="broker-status">Disconnected</span>
+      </div>
+      <div class="status-row" style="margin-bottom:.6rem">
+        <span class="status-label">Printer</span>
+        <span class="status-dot" id="printer-dot"></span>
+        <span class="status-value" id="printer-status">Offline</span>
+      </div>
+      <div class="status-row" id="broker-host-row" style="display:none">
+        <span class="status-label">Broker</span>
+        <span class="status-value" id="broker-host-val"></span>
+      </div>
+      <div class="alert alert-error" id="mqtt-error" style="display:none;margin-top:.75rem"></div>
+    </div>
+
+    <!-- Live stats -->
+    <div class="card mb-4" id="live-card" style="display:none">
+      <div class="settings-section-title">Live Printer State</div>
+      <div class="live-panel">
+        <div class="live-stat"><div class="live-stat-value" id="ls-state">—</div><div class="live-stat-label">State</div></div>
+        <div class="live-stat"><div class="live-stat-value" id="ls-progress">—</div><div class="live-stat-label">Progress</div></div>
+        <div class="live-stat"><div class="live-stat-value" id="ls-eta">—</div><div class="live-stat-label">Remaining</div></div>
+        <div class="live-stat"><div class="live-stat-value" id="ls-bed">—</div><div class="live-stat-label">Bed</div></div>
+        <div class="live-stat"><div class="live-stat-value" id="ls-nozzle">—</div><div class="live-stat-label">Nozzle</div></div>
+        <div class="live-stat"><div class="live-stat-value" id="ls-job" style="font-size:1rem">—</div><div class="live-stat-label">Job</div></div>
+      </div>
+      <div id="ams-active" style="margin-top:1rem;display:none">
+        <span class="badge" id="ams-active-txt"></span>
+      </div>
+    </div>
+
+    <!-- Test connection -->
+    <div class="card">
+      <div class="settings-section-title">Test Connection</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Broker host or URI</label>
+          <input type="text" id="test-host" placeholder="192.168.1.x or ws://192.168.1.x:9001/mqtt">
+        </div>
+        <div class="form-group">
+          <label>Port</label>
+          <input type="number" id="test-port" value="1883">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Username</label>
+          <input type="text" id="test-user" placeholder="bblp">
+        </div>
+        <div class="form-group">
+          <label>Password / Access code</label>
+          <input type="password" id="test-pass">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Topic root</label>
+        <input type="text" id="test-topic" placeholder="device/{serial}">
+      </div>
+      <div class="form-group" style="margin-top:.35rem">
+        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer">
+          <input type="checkbox" id="relay-no-auth">
+          <span>No authentication (relay mode)</span>
+        </label>
+      </div>
+      <button class="btn primary" id="test-btn">🔍 Test</button>
+      <div id="test-result" class="alert" style="display:none;margin-top:.75rem"></div>
+    </div>
+  </main>
+
+  <script src="/js/app.js"></script>
+  <script>
+  (function () {
+    let printerSerial = '';
+
+    function showMqttError(msg) {
+      const errEl = document.getElementById('mqtt-error');
+      errEl.textContent = msg || 'Unknown MQTT error';
+      errEl.style.display = '';
+    }
+
+    function clearMqttError() {
+      const errEl = document.getElementById('mqtt-error');
+      errEl.textContent = '';
+      errEl.style.display = 'none';
+    }
+
+    function applyNoAuthUi() {
+      const noAuth = document.getElementById('relay-no-auth').checked;
+      const userEl = document.getElementById('test-user');
+      const passEl = document.getElementById('test-pass');
+      userEl.disabled = noAuth;
+      passEl.disabled = noAuth;
+      if (noAuth) {
+        userEl.value = '';
+        passEl.value = '';
+      }
+    }
+
+    function normalizeTopicRoot(raw) {
+      const t = (raw || '').trim();
+      if (!t) {
+        return printerSerial ? `device/${printerSerial}` : '';
+      }
+      if (t.includes('{serial}') && printerSerial) {
+        return t.replace('{serial}', printerSerial);
+      }
+      return t;
+    }
+
+    function fmtTemp(v) { return v != null ? v.toFixed(1) + ' °C' : '—'; }
+    function fmtETA(m)  {
+      if (!m) return '—';
+      const hh = Math.floor(m / 60), mm = m % 60;
+      return hh ? `${hh}h ${mm}m` : `${mm}m`;
+    }
+
+    function updateStatus(status) {
+      const connected = status.connected;
+      document.getElementById('broker-dot').className    = 'status-dot' + (connected ? ' online' : '');
+      document.getElementById('broker-status').textContent = connected ? 'Connected' : 'Disconnected';
+      document.getElementById('disconnect-btn').style.display = connected ? '' : 'none';
+
+      const hostRow = document.getElementById('broker-host-row');
+      if (status.broker_host) {
+        hostRow.style.display = '';
+        const host = status.broker_host;
+        document.getElementById('broker-host-val').textContent = host.includes('://') ? host : `${host}:${status.broker_port}`;
+      } else {
+        hostRow.style.display = 'none';
+      }
+      const errEl = document.getElementById('mqtt-error');
+      if (status.last_error) { errEl.textContent = status.last_error; errEl.style.display = ''; }
+      else errEl.style.display = 'none';
+    }
+
+    function updateRuntime(rt) {
+      const online = rt.printer_online;
+      document.getElementById('printer-dot').className = 'status-dot' + (online ? ' online' : '');
+      document.getElementById('printer-status').textContent = online ? 'Online' : 'Offline';
+      document.getElementById('live-card').style.display = online ? '' : 'none';
+      if (online) {
+        document.getElementById('ls-state').textContent    = rt.printer_state      || '—';
+        document.getElementById('ls-progress').textContent = rt.progress_percent != null ? rt.progress_percent + '%' : '—';
+        document.getElementById('ls-eta').textContent      = fmtETA(rt.remaining_minutes);
+        document.getElementById('ls-bed').textContent      = fmtTemp(rt.bed_temp_c);
+        document.getElementById('ls-nozzle').textContent   = fmtTemp(rt.nozzle_temp_c);
+        document.getElementById('ls-job').textContent      = rt.current_job_name   || '—';
+        const amsEl = document.getElementById('ams-active');
+        if (rt.active_ams_id) {
+          amsEl.style.display = '';
+          document.getElementById('ams-active-txt').textContent = `Active: ${rt.active_ams_id} Slot ${rt.active_slot}`;
+        } else amsEl.style.display = 'none';
+      }
+    }
+
+    async function loadStatus()  {
+      try {
+        const r = await API.get('/mqtt/status');
+        if (r.ok) updateStatus(r.data);
+      } catch (e) {
+        showMqttError('Failed to load MQTT status');
+      }
+    }
+
+    async function loadRuntime() {
+      try {
+        const r = await API.get('/mqtt/runtime');
+        if (r.ok) updateRuntime(r.data);
+      } catch (e) {
+        showMqttError('Failed to load printer runtime');
+      }
+    }
+
+    async function prefillMqttFields() {
+      try {
+        const r = await API.get('/settings');
+        if (!r.ok || !r.data || !r.data.mqtt) return;
+        const m = r.data.mqtt;
+        printerSerial = r.data?.printer?.serial || '';
+        document.getElementById('test-host').value  = m.broker_host || '';
+        document.getElementById('test-port').value  = m.broker_port || 1883;
+        document.getElementById('test-user').value  = m.username || '';
+        const savedTopic = m.topic_root || '';
+        document.getElementById('test-topic').value = normalizeTopicRoot(savedTopic || 'device/{serial}');
+        applyNoAuthUi();
+      } catch (_) {
+        /* Non-fatal */
+      }
+    }
+
+    document.getElementById('connect-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('connect-btn');
+      btn.disabled = true; btn.textContent = 'Connecting…';
+      try {
+        const payload = {
+          broker_host: document.getElementById('test-host').value.trim(),
+          broker_port: parseInt(document.getElementById('test-port').value, 10) || 1883,
+          topic_root:  normalizeTopicRoot(document.getElementById('test-topic').value),
+        };
+
+        const noAuth = document.getElementById('relay-no-auth').checked;
+        if (noAuth) {
+          payload.username = '';
+          payload.password = '';
+        } else {
+          payload.username = document.getElementById('test-user').value.trim();
+
+          const pass = document.getElementById('test-pass').value;
+          if (pass && pass.trim().length > 0) {
+            payload.password = pass;
+          }
+        }
+
+        const reqBody = payload.broker_host ? payload : {};
+        const res = await API.post('/mqtt/connect', reqBody);
+        if (!res.ok) showMqttError(res.error?.message || 'Connect request failed');
+        await loadStatus();
+      } catch (e) {
+        showMqttError('Failed to request MQTT connect');
+      }
+      btn.disabled = false; btn.textContent = 'Connect';
+    });
+
+    document.getElementById('disconnect-btn').addEventListener('click', async () => {
+      try {
+        await API.post('/mqtt/disconnect', {});
+        await loadStatus();
+      } catch (e) {
+        showMqttError('Failed to disconnect MQTT');
+      }
+    });
+
+    document.getElementById('test-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('test-btn');
+      btn.disabled = true; btn.textContent = 'Testing…';
+      const payload = {
+        broker_host:  document.getElementById('test-host').value.trim(),
+        broker_port:  parseInt(document.getElementById('test-port').value, 10) || 1883,
+        topic_root:   normalizeTopicRoot(document.getElementById('test-topic').value),
+      };
+      if (document.getElementById('relay-no-auth').checked) {
+        payload.username = '';
+        payload.password = '';
+      } else {
+        payload.username = document.getElementById('test-user').value.trim();
+        payload.password = document.getElementById('test-pass').value;
+      }
+      const res = await API.post('/mqtt/test', payload);
+      btn.disabled = false; btn.textContent = '🔍 Test';
+      const resEl = document.getElementById('test-result');
+      const data  = res.ok ? res.data : { reachable: false };
+      resEl.className = 'alert ' + (data.reachable ? 'alert-success' : 'alert-error');
+      const note = data.note ? `<div style="margin-top:.35rem;opacity:.85">${data.note}</div>` : '';
+      resEl.innerHTML = `Reachable: <strong>${data.reachable ? '✅ Yes' : '❌ No'}</strong>  ·  Authenticated: <strong>${data.authenticated ? '✅ Yes' : '❌ No'}</strong>${note}`;
+      resEl.style.display = '';
+    });
+
+    document.addEventListener('ws:message', e => {
+      const msg = e.detail;
+      if (msg.type === 'mqtt.runtime.updated') updateRuntime(msg.data);
+      if (msg.type === 'mqtt.status.updated')  loadStatus();
+    });
+
+    document.addEventListener('DOMContentLoaded', () => {
+      initSidebar();
+      document.getElementById('relay-no-auth').addEventListener('change', applyNoAuthUi);
+      ['test-host','test-port','test-user','test-pass','test-topic'].forEach(id => {
+        document.getElementById(id).addEventListener('input', clearMqttError);
+      });
+      document.getElementById('relay-no-auth').addEventListener('change', clearMqttError);
+      applyNoAuthUi();
+      prefillMqttFields();
+      loadStatus();
+      loadRuntime();
+    });
+  })();
+  </script>
+</body>
+</html>

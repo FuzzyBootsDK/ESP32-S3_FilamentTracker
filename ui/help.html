@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-store">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Help — Filament Tracker</title>
+  <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+<script>document.body.classList.add(localStorage.getItem('ft_theme')||'dark');</script>
+
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <h1>🧵 Filament Tracker</h1>
+      <div class="subtitle">ESP32-S3</div>
+    </div>
+    <div class="sidebar-printer">
+      <div class="printer-status">
+        <span class="status-dot"></span>
+        <span class="printer-info">Printer offline</span>
+      </div>
+    </div>
+    <ul>
+      <li><a href="/index.html"><span class="nav-icon">📦</span> Inventory</a></li>
+      <li><a href="/add-filament.html"><span class="nav-icon">➕</span> Add Filament</a></li>
+      <li><a href="/ams.html"><span class="nav-icon">🔗</span> AMS</a></li>
+      <li><a href="/mqtt.html"><span class="nav-icon">📡</span> MQTT</a></li>
+      <li><a href="/settings.html"><span class="nav-icon">⚙️</span> Settings</a></li>
+      <li><a href="/help.html"><span class="nav-icon">❓</span> Help</a></li>
+    </ul>
+    <div class="sidebar-footer">
+      <div class="ws-indicator">
+        <span class="status-dot"></span>
+        <span>Connecting…</span>
+      </div>
+    </div>
+  </nav>
+
+  <main class="content">
+    <div class="page-header"><h2>❓ Help</h2></div>
+
+    <div style="display:grid;grid-template-columns:220px 1fr;gap:1.5rem;align-items:start">
+      <!-- Section nav -->
+      <div class="card" style="padding:.5rem">
+        <ul id="help-nav" style="list-style:none"></ul>
+      </div>
+      <!-- Content -->
+      <div class="card help-section" id="help-content">
+        <p class="muted">Select a section on the left.</p>
+      </div>
+    </div>
+  </main>
+
+  <script src="/js/app.js"></script>
+  <script>
+  (function () {
+    let sections = [], activeId = null;
+
+    function renderNav() {
+      document.getElementById('help-nav').innerHTML = sections.map(s =>
+        `<li><button class="btn w-full ${activeId === s.id ? 'primary' : ''}"
+           style="justify-content:flex-start;margin-bottom:.25rem;text-align:left"
+           data-sid="${h(s.id)}">${h(s.title)}</button></li>`
+      ).join('');
+      document.querySelectorAll('#help-nav [data-sid]').forEach(btn => {
+        btn.addEventListener('click', () => { activeId = btn.dataset.sid; renderAll(); });
+      });
+    }
+
+    function renderContent() {
+      const sec = sections.find(s => s.id === activeId);
+      const el  = document.getElementById('help-content');
+      if (!sec) { el.innerHTML = '<p class="muted">Select a section on the left.</p>'; return; }
+      el.innerHTML = `<h3>${h(sec.title)}</h3><hr class="divider">${sec.content_html || ''}`;
+    }
+
+    function renderAll() { renderNav(); renderContent(); }
+
+    async function init() {
+      initSidebar();
+      try {
+        const r = await API.get('/help');
+        if (r.ok) {
+          sections = r.data.sections || [];
+          if (sections.length) activeId = sections[0].id;
+          renderAll();
+        } else {
+          document.getElementById('help-content').innerHTML = '<p class="muted">Failed to load help: ' + h(r.error?.message || 'unknown error') + '</p>';
+        }
+      } catch (e) {
+        document.getElementById('help-content').innerHTML = '<p class="muted">Error: ' + h(e.message) + '</p>';
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', init);
+  })();
+  </script>
+</body>
+</html>

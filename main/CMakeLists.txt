@@ -1,0 +1,29 @@
+idf_component_register(
+    SRCS
+        "app_main.c"
+        "wifi_manager.c"
+        "api_http.c"
+        "api_ws.c"
+        "inventory_service.c"
+        "ams_service.c"
+        "mqtt_service.c"
+        "settings_service.c"
+        "help_service.c"
+        "storage_fs.c"
+        "storage_nvs.c"
+        "json_codec.c"
+        "sntp_service.c"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        nvs_flash
+        esp_wifi
+        esp_netif
+        esp_http_server
+        mqtt
+        json
+        esp_timer
+        app_update
+        joltwallet__littlefs
+        lwip
+)

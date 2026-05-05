@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-store">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Add Filament — Filament Tracker</title>
+  <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+<script>document.body.classList.add(localStorage.getItem('ft_theme')||'dark');</script>
+
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <h1>🧵 Filament Tracker</h1>
+      <div class="subtitle">ESP32-S3</div>
+    </div>
+    <div class="sidebar-printer">
+      <div class="printer-status">
+        <span class="status-dot"></span>
+        <span class="printer-info">Printer offline</span>
+      </div>
+    </div>
+    <ul>
+      <li><a href="/index.html"><span class="nav-icon">📦</span> Inventory</a></li>
+      <li><a href="/add-filament.html"><span class="nav-icon">➕</span> Add Filament</a></li>
+      <li><a href="/ams.html"><span class="nav-icon">🔗</span> AMS</a></li>
+      <li><a href="/mqtt.html"><span class="nav-icon">📡</span> MQTT</a></li>
+      <li><a href="/settings.html"><span class="nav-icon">⚙️</span> Settings</a></li>
+      <li><a href="/help.html"><span class="nav-icon">❓</span> Help</a></li>
+    </ul>
+    <div class="sidebar-footer">
+      <div class="ws-indicator">
+        <span class="status-dot"></span>
+        <span>Connecting…</span>
+      </div>
+    </div>
+  </nav>
+
+  <main class="content">
+    <div class="page-header">
+      <h2 id="pg-title">➕ Add Filament</h2>
+      <a href="/index.html" class="btn">← Back</a>
+    </div>
+
+    <div id="pg-error" class="alert alert-error" style="display:none"></div>
+
+    <div class="card">
+      <div class="settings-section-title">Identification</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Brand *</label>
+          <input type="text" id="f-brand" list="brand-opts" placeholder="e.g. Bambu Lab">
+          <datalist id="brand-opts"></datalist>
+        </div>
+        <div class="form-group">
+          <label>Material *</label>
+          <input type="text" id="f-material" list="mat-opts" placeholder="e.g. PLA">
+          <datalist id="mat-opts"></datalist>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Colour *</label>
+          <input type="text" id="f-color" placeholder="e.g. Black">
+        </div>
+        <div class="form-group">
+          <label>Colour Hex</label>
+          <div class="color-input-row">
+            <input type="color" id="f-color-picker" value="#888888">
+            <input type="text"  id="f-color-hex" placeholder="#888888" maxlength="7">
+          </div>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Finish</label>
+          <input type="text" id="f-finish" list="fin-opts" placeholder="e.g. Matte">
+          <datalist id="fin-opts"></datalist>
+        </div>
+        <div class="form-group">
+          <label>Vendor / Store</label>
+          <input type="text" id="f-vendor" placeholder="e.g. Example Store">
+        </div>
+      </div>
+      <hr class="divider">
+      <div class="settings-section-title">Physical</div>
+      <div class="form-row-3">
+        <div class="form-group">
+          <label>Spool type</label>
+          <select id="f-spool-type"></select>
+        </div>
+        <div class="form-group">
+          <label>Capacity (g) *</label>
+          <input type="number" id="f-total-grams" min="1" step="50" value="1000">
+        </div>
+        <div class="form-group">
+          <label>Price / kg (€)</label>
+          <input type="number" id="f-price" min="0" step="0.01" value="0">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Location</label>
+          <input type="text" id="f-location" list="loc-opts" placeholder="e.g. Shelf A">
+          <datalist id="loc-opts"></datalist>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <textarea id="f-notes" placeholder="Optional notes…"></textarea>
+      </div>
+      <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:.5rem">
+        <a href="/index.html" class="btn">Cancel</a>
+        <button class="btn primary" id="save-btn">➕ Create Type</button>
+      </div>
+    </div>
+
+    <!-- Spools section (edit mode only) -->
+    <div class="card" id="spools-card" style="display:none;margin-top:1.25rem">
+      <div class="page-header" style="margin-bottom:1rem">
+        <div class="settings-section-title" style="margin:0">Spools</div>
+        <button class="btn primary btn-sm" id="add-spool-btn">➕ Add Spool</button>
+      </div>
+      <p class="muted" id="spools-empty">No spools yet — add the first one above.</p>
+      <div class="table-wrapper" id="spools-table-wrap" style="display:none">
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Remaining (g)</th><th>Tag UID</th><th>Status</th><th></th></tr>
+          </thead>
+          <tbody id="spools-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script src="/js/app.js"></script>
+  <script>
+  (function () {
+    const params  = new URLSearchParams(location.search);
+    const editId  = params.get('edit') || '';
+    const isEdit  = !!editId;
+    let spools    = [];
+    let totalGrams = 1000;
+
+    if (isEdit) document.getElementById('pg-title').textContent = '✏️ Edit Filament Type';
+    document.getElementById('save-btn').textContent = isEdit ? '💾 Save Changes' : '➕ Create Type';
+
+    /* ── colour picker sync ── */
+    const picker  = document.getElementById('f-color-picker');
+    const hexInput = document.getElementById('f-color-hex');
+    picker.addEventListener('input',  () => { hexInput.value = picker.value; });
+    hexInput.addEventListener('input', () => {
+      if (/^#[0-9a-fA-F]{6}$/.test(hexInput.value)) picker.value = hexInput.value;
+    });
+
+    function getForm() {
+      return {
+        brand:        document.getElementById('f-brand').value.trim(),
+        material:     document.getElementById('f-material').value.trim(),
+        color:        document.getElementById('f-color').value.trim(),
+        color_hex:    hexInput.value || '#888888',
+        finish:       document.getElementById('f-finish').value.trim(),
+        vendor:       document.getElementById('f-vendor').value.trim(),
+        spool_type:   document.getElementById('f-spool-type').value,
+        total_grams:  parseInt(document.getElementById('f-total-grams').value, 10) || 1000,
+        price_per_kg: parseFloat(document.getElementById('f-price').value) || 0,
+        location:     document.getElementById('f-location').value.trim(),
+        notes:        document.getElementById('f-notes').value.trim(),
+      };
+    }
+
+    function setForm(d) {
+      document.getElementById('f-brand').value       = d.brand        || '';
+      document.getElementById('f-material').value    = d.material     || '';
+      document.getElementById('f-color').value       = d.color        || '';
+      hexInput.value                                  = d.color_hex    || '#888888';
+      picker.value                                    = /^#[0-9a-fA-F]{6}$/.test(d.color_hex) ? d.color_hex : '#888888';
+      document.getElementById('f-finish').value      = d.finish       || '';
+      document.getElementById('f-vendor').value      = d.vendor       || '';
+      document.getElementById('f-total-grams').value = d.total_grams  || 1000;
+      document.getElementById('f-price').value       = d.price_per_kg || 0;
+      document.getElementById('f-location').value    = d.location     || '';
+      document.getElementById('f-notes').value       = d.notes        || '';
+      totalGrams = d.total_grams || 1000;
+      const sel = document.getElementById('f-spool-type');
+      if (d.spool_type) {
+        for (let o of sel.options) if (o.value === d.spool_type) { o.selected = true; break; }
+      }
+    }
+
+    function renderSpools() {
+      const empty = document.getElementById('spools-empty');
+      const wrap  = document.getElementById('spools-table-wrap');
+      const tbody = document.getElementById('spools-body');
+      if (spools.length === 0) { empty.style.display = ''; wrap.style.display = 'none'; return; }
+      empty.style.display = 'none';
+      wrap.style.display  = '';
+      tbody.innerHTML = spools.map(sp => `
+<tr data-sid="${h(sp.id)}">
+  <td><code style="font-size:.78rem">${h(sp.id)}</code></td>
+  <td><input type="number" class="spool-grams" value="${h(sp.remaining_grams)}" min="0" max="${h(totalGrams)}" style="width:90px" data-sid="${h(sp.id)}"></td>
+  <td><span class="muted">${h(sp.tag_uid || '—')}</span></td>
+  <td>${sp.archived ? '<span class="badge">Archived</span>' : '<span class="badge">Active</span>'}</td>
+  <td><button class="btn danger btn-sm del-spool" data-sid="${h(sp.id)}">🗑️</button></td>
+</tr>`).join('');
+
+      tbody.querySelectorAll('.spool-grams').forEach(inp => {
+        inp.addEventListener('change', async e => {
+          const sid = e.target.dataset.sid;
+          const g   = parseInt(e.target.value, 10);
+          if (isNaN(g)) return;
+          await API.patch(`/inventory/${editId}/spools/${sid}/grams`, { remaining_grams: g });
+        });
+      });
+      tbody.querySelectorAll('.del-spool').forEach(btn => {
+        btn.addEventListener('click', async e => {
+          const sid = e.currentTarget.dataset.sid;
+          const res = await API.del(`/inventory/${editId}/spools/${sid}`);
+          if (res.ok) { spools = spools.filter(s => s.id !== sid); renderSpools(); toast('Spool removed'); }
+          else toast('Failed', 'error');
+        });
+      });
+    }
+
+    document.getElementById('add-spool-btn').addEventListener('click', async () => {
+      const res = await API.post(`/inventory/${editId}/spools`, { remaining_grams: totalGrams, archived: false });
+      if (res.ok) {
+        toast('Spool added');
+        const r = await API.get(`/inventory/${editId}`);
+        if (r.ok) { spools = r.data.spools || []; renderSpools(); }
+      } else toast(res.error?.message || 'Failed', 'error');
+    });
+
+    document.getElementById('save-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('save-btn');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      const errEl = document.getElementById('pg-error');
+      errEl.style.display = 'none';
+      try {
+        const form = getForm();
+        const res = isEdit
+          ? await API.put(`/inventory/${editId}`, form)
+          : await API.post('/inventory', form);
+        if (res.ok) {
+          toast(isEdit ? 'Updated!' : 'Filament type created!');
+          setTimeout(() => location.href = '/index.html', 800);
+        } else {
+          errEl.textContent = res.error?.message || 'Save failed';
+          errEl.style.display = '';
+        }
+      } catch (e) {
+        errEl.textContent = 'Network error: ' + e.message;
+        errEl.style.display = '';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = isEdit ? '💾 Save Changes' : '➕ Create Type';
+      }
+    });
+
+    async function init() {
+      initSidebar();
+      const errEl = document.getElementById('pg-error');
+      try {
+      const optRes = await API.get('/inventory/meta/options');
+      if (optRes.ok) {
+        const opts = optRes.data;
+        function fillList(id, arr) {
+          const dl = document.getElementById(id);
+          if (dl) dl.innerHTML = (arr || []).map(v => `<option value="${h(v)}"></option>`).join('');
+        }
+        fillList('brand-opts', opts.brands);
+        fillList('mat-opts',   opts.materials);
+        fillList('fin-opts',   opts.finishes);
+        fillList('loc-opts',   opts.locations);
+        const sel = document.getElementById('f-spool-type');
+        sel.innerHTML = (opts.spool_types || ['Plastic']).map(v => `<option value="${h(v)}">${h(v)}</option>`).join('');
+      }
+
+      if (isEdit) {
+        const r = await API.get(`/inventory/${editId}`);
+        if (r.ok) {
+          setForm(r.data);
+          spools = r.data.spools || [];
+          document.getElementById('spools-card').style.display = '';
+          renderSpools();
+        }
+      }
+      } catch (e) {
+        errEl.textContent = 'Error loading page: ' + e.message;
+        errEl.style.display = '';
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', init);
+  })();
+  </script>
+</body>
+</html>

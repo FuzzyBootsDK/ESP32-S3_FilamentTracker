@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-store">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Filament Tracker</title>
+  <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+<script>document.body.classList.add(localStorage.getItem('ft_theme')||'dark');</script>
+
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <h1>🧵 Filament Tracker</h1>
+      <div class="subtitle">ESP32-S3</div>
+    </div>
+    <div class="sidebar-printer">
+      <div class="printer-status">
+        <span class="status-dot"></span>
+        <span class="printer-info">Printer offline</span>
+      </div>
+      <div class="printer-progress" style="display:none">
+        <div class="printer-progress-bar" style="width:0%"></div>
+      </div>
+    </div>
+    <ul>
+      <li><a href="/index.html"><span class="nav-icon">📦</span> Inventory</a></li>
+      <li><a href="/add-filament.html"><span class="nav-icon">➕</span> Add Filament</a></li>
+      <li><a href="/ams.html"><span class="nav-icon">🔗</span> AMS</a></li>
+      <li><a href="/mqtt.html"><span class="nav-icon">📡</span> MQTT</a></li>
+      <li><a href="/settings.html"><span class="nav-icon">⚙️</span> Settings</a></li>
+      <li><a href="/help.html"><span class="nav-icon">❓</span> Help</a></li>
+    </ul>
+    <div class="sidebar-footer">
+      <div class="ws-indicator">
+        <span class="status-dot"></span>
+        <span>Connecting…</span>
+      </div>
+    </div>
+  </nav>
+
+  <main class="content">
+    <!-- Page header -->
+    <div class="pageHeader">
+      <h1>🧵 Filament Inventory</h1>
+      <div class="sub">Track filament spools · Click a tile to manage · Warning strip shows low stock</div>
+    </div>
+
+    <!-- KPI bar -->
+    <section class="kpis">
+      <div class="kpi">
+        <div>
+          <div class="label">Total Filaments</div>
+          <div class="value" id="kpi-total">—</div>
+        </div>
+      </div>
+      <div class="kpi">
+        <div>
+          <div class="label">Low Stock</div>
+          <div class="value" id="kpi-low" style="color:var(--warn)">—</div>
+        </div>
+      </div>
+      <div class="kpi">
+        <div>
+          <div class="label">Critical</div>
+          <div class="value" id="kpi-critical" style="color:var(--danger)">—</div>
+        </div>
+      </div>
+      <div class="kpi" style="justify-content:center">
+        <a href="/add-filament.html" class="btn primary">➕ Add Filament</a>
+      </div>
+    </section>
+
+    <!-- Low-stock strip -->
+    <section id="strip" class="strip" style="display:none">
+      <div class="left">
+        <span class="pill" id="strip-pill">⚠ Low Stock</span>
+        <span id="strip-text"></span>
+      </div>
+      <button class="btn" id="strip-btn">Show Low Only</button>
+    </section>
+
+    <!-- Controls -->
+    <div class="controls">
+      <input class="input" type="text" id="ctrl-q" placeholder="Search brand, color, type, finish…">
+      <select class="input" id="ctrl-material">
+        <option value="">All Types</option>
+        <option value="PLA">PLA</option>
+        <option value="PETG">PETG</option>
+        <option value="ASA">ASA</option>
+        <option value="ABS">ABS</option>
+        <option value="TPU">TPU</option>
+        <option value="NYLON">NYLON</option>
+        <option value="PA">PA</option>
+        <option value="PC">PC</option>
+        <option value="HIPS">HIPS</option>
+        <option value="PVA">PVA</option>
+      </select>
+      <select class="input" id="ctrl-sort">
+        <option value="newest">Newest First</option>
+        <option value="oldest">Oldest First</option>
+        <option value="remainingAsc">Lowest Remaining</option>
+        <option value="remainingDesc">Highest Remaining</option>
+        <option value="nameAsc">Name A→Z</option>
+        <option value="nameDesc">Name Z→A</option>
+        <option value="colorDark">Color: Darkest First</option>
+        <option value="colorLight">Color: Lightest First</option>
+      </select>
+      <select class="input" id="ctrl-archived">
+        <option value="false">Active only</option>
+        <option value="">Active + Archived</option>
+        <option value="true">Archived only</option>
+      </select>
+      <div class="spacer"></div>
+      <span class="pill" id="ctrl-count">0 shown</span>
+    </div>
+
+    <!-- Loading -->
+    <p id="inv-loading" class="muted">Loading…</p>
+
+    <!-- Empty state -->
+    <div id="inv-empty" class="card" style="display:none;text-align:center;padding:3rem">
+      <p style="font-size:2rem">🧵</p>
+      <p class="muted" style="margin-top:.75rem">No filament found. <a href="/add-filament.html">Add some!</a></p>
+    </div>
+
+    <!-- Tile grid -->
+    <section class="grid" id="inv-grid" style="display:none"></section>
+
+    <!-- Pagination -->
+    <div class="pagination" id="inv-pages" style="display:none">
+      <button class="btn" id="pg-prev">◀ Prev</button>
+      <span class="pagination-info" id="pg-info"></span>
+      <button class="btn" id="pg-next">Next ▶</button>
+    </div>
+
+    <!-- Usage modal -->
+    <div class="modal-backdrop" id="usage-modal" style="display:none">
+      <div class="modal usage-modal">
+        <div class="modal-header">
+          <h3>Register Usage</h3>
+          <button class="btn" id="usage-close" type="button">✕</button>
+        </div>
+        <p class="muted usage-target" id="usage-target"></p>
+        <p class="muted usage-quick-label">Quick select:</p>
+        <div class="usage-chip-row">
+          <button class="btn usage-chip" type="button" data-grams="25">-25g</button>
+          <button class="btn usage-chip" type="button" data-grams="50">-50g</button>
+          <button class="btn usage-chip" type="button" data-grams="100">-100g</button>
+          <button class="btn usage-chip" type="button" data-grams="250">-250g</button>
+        </div>
+        <div class="form-group">
+          <label for="usage-grams">Used grams</label>
+          <input type="number" id="usage-grams" min="1" step="1" value="50">
+        </div>
+        <p class="muted usage-remaining-hint" id="usage-remaining-hint"></p>
+        <div id="usage-feedback" class="alert alert-error usage-feedback" style="display:none"></div>
+        <div class="modal-footer">
+          <div class="usage-actions">
+            <button class="btn" id="usage-cancel" type="button">Cancel</button>
+            <button class="btn primary" id="usage-save" type="button">Save Usage</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Delete modal -->
+    <div class="modal-backdrop" id="del-modal" style="display:none">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Delete Filament Type</h3>
+          <button class="btn" id="del-close">✕</button>
+        </div>
+        <p>Delete <strong id="del-name"></strong>? This removes all spools within this type.</p>
+        <div style="margin-top:.75rem">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="del-force"> Force delete even if AMS-linked
+          </label>
+        </div>
+        <div class="modal-footer">
+          <button class="btn" id="del-cancel">Cancel</button>
+          <button class="btn danger" id="del-confirm">Delete</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="/js/app.js"></script>
+  <script>
+  (function () {
+    let items = [], totalItems = 0, lowCount = 0, criticalCount = 0;
+    let page = 1, totalPages = 1;
+    const pageSize = 200;
+    let sortKey = 'newest', material = '', archived = 'false', lowStockOnly = '';
+    let deleteTarget = null;
+    let usageTarget = null;
+
+    const grid      = document.getElementById('inv-grid');
+    const loading   = document.getElementById('inv-loading');
+    const empty     = document.getElementById('inv-empty');
+    const pages     = document.getElementById('inv-pages');
+    const strip     = document.getElementById('strip');
+    const stripPill = document.getElementById('strip-pill');
+    const stripText = document.getElementById('strip-text');
+    const stripBtn  = document.getElementById('strip-btn');
+
+    async function saveUsage(consumedOverride) {
+      if (!usageTarget) return;
+      const fieldVal = parseInt(document.getElementById('usage-grams').value, 10);
+      let grams = Number.isFinite(consumedOverride) ? consumedOverride : fieldVal;
+      if (!Number.isFinite(grams) || grams <= 0) {
+        showUsageFeedback('Enter a valid gram amount');
+        return;
+      }
+      if (usageTarget.total_remaining_grams > 0) {
+        grams = Math.min(grams, usageTarget.total_remaining_grams);
+      }
+
+      const saveBtn = document.getElementById('usage-save');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+      document.getElementById('usage-feedback').style.display = 'none';
+
+      try {
+        let ok = false;
+        const res = await API.patch(`/inventory/${usageTarget.id}/grams`, { consumed_grams: grams });
+        ok = !!(res && res.ok && res.data && res.data.updated);
+
+        if (!ok) {
+          const detail = await API.get(`/inventory/${usageTarget.id}`);
+          if (detail.ok && detail.data && Array.isArray(detail.data.spools) && detail.data.spools.length > 0) {
+            const active = detail.data.spools.find(s => !s.archived) || detail.data.spools[0];
+            const current = Number.isFinite(active.remaining_grams) ? active.remaining_grams : 0;
+            const next = Math.max(0, current - grams);
+            const fallback = await API.patch(`/inventory/${usageTarget.id}/spools/${active.id}/grams`, {
+              remaining_grams: next,
+            });
+            ok = !!(fallback && fallback.ok);
+          }
+        }
+
+        if (!ok) {
+          showUsageFeedback('Failed to register usage. Please upload latest firmware and try again.');
+          return;
+        }
+
+        toast(`Usage saved: -${grams}g`);
+        closeUsageModal();
+        load();
+      } catch (err) {
+        showUsageFeedback('Network error while saving usage');
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Usage';
+      }
+    }
+
+    function showUsageFeedback(msg) {
+      const el = document.getElementById('usage-feedback');
+      el.textContent = msg;
+      el.style.display = '';
+    }
+
+    function openUsageModal(item) {
+      usageTarget = item;
+      document.getElementById('usage-feedback').style.display = 'none';
+      document.getElementById('usage-target').textContent =
+        `${item.brand} ${item.material} ${item.color} — ${item.total_remaining_grams}g left`;
+
+      const suggested = Math.min(100, Math.max(1, item.total_remaining_grams || 1));
+      const input = document.getElementById('usage-grams');
+      input.value = suggested;
+      input.max = Math.max(1, item.total_remaining_grams || 1);
+
+      const hint = document.getElementById('usage-remaining-hint');
+      hint.textContent = item.total_remaining_grams > 0
+        ? `Current remaining: ${item.total_remaining_grams}g`
+        : 'No grams left on active spools. Open edit to add/refill a spool.';
+
+      const canSave = item.total_remaining_grams > 0;
+      document.getElementById('usage-save').disabled = !canSave;
+      document.getElementById('usage-modal').style.display = '';
+      if (canSave) input.focus();
+    }
+
+    function closeUsageModal() {
+      usageTarget = null;
+      document.getElementById('usage-modal').style.display = 'none';
+    }
+
+    async function load() {
+      loading.style.display = '';
+      grid.style.display    = 'none';
+      empty.style.display   = 'none';
+      pages.style.display   = 'none';
+
+      const { sort, dir } = SORT_MAP[sortKey] || SORT_MAP.newest;
+      const params = new URLSearchParams({ page, page_size: pageSize, sort, dir });
+      const q = document.getElementById('ctrl-q').value.trim();
+      if (q)            params.set('q', q);
+      if (material)     params.set('material', material);
+      if (archived !== '') params.set('archived', archived);
+      if (lowStockOnly) params.set('low_stock_only', lowStockOnly);
+
+      const res = await API.get('/inventory?' + params);
+      loading.style.display = 'none';
+      if (!res.ok) { toast('Failed to load inventory', 'error'); return; }
+
+      items      = res.data.items;
+      totalItems = res.data.total_items;
+      totalPages = res.data.total_pages;
+      lowCount      = items.filter(i => i.has_low_stock).length;
+      criticalCount = items.filter(i => weightPct(i) <= 10 && i.total_grams > 0).length;
+
+      renderKPI();
+      renderStrip();
+      renderGrid();
+      renderPagination();
+    }
+
+    function renderKPI() {
+      document.getElementById('kpi-total').textContent    = totalItems;
+      document.getElementById('kpi-low').textContent      = lowCount;
+      document.getElementById('kpi-critical').textContent = criticalCount;
+      document.getElementById('ctrl-count').textContent   = items.length + ' shown';
+    }
+
+    function renderStrip() {
+      if (lowCount === 0) { strip.style.display = 'none'; return; }
+      strip.style.display = '';
+      const isCrit = criticalCount > 0;
+      stripPill.className = 'pill ' + (isCrit ? 'danger' : 'warn');
+      stripPill.textContent = isCrit ? '⚠ Critical Stock' : '⚠ Low Stock';
+      stripText.textContent = lowCount + ' filament' + (lowCount !== 1 ? 's' : '') + ' running low'
+        + (criticalCount > 0 ? ` (${criticalCount} critical)` : '');
+      stripBtn.textContent = lowStockOnly ? 'Show All' : 'Show Low Only';
+    }
+
+    function renderGrid() {
+      if (items.length === 0) { empty.style.display = ''; return; }
+      grid.style.display = '';
+      grid.innerHTML = items.map(item => {
+        const pct    = weightPct(item);
+        const status = tileStatus(item);
+        const badge  = tileBadgeText(status);
+        const isLow  = status !== 'ok';
+        const stacked = item.active_spool_count > 1 ? ' stacked' : '';
+
+        const typeCls   = item.material ? ` type-${h(item.material)}` : '';
+        const finCls    = item.finish   ? ` finish-${h(item.finish)}`  : '';
+        const amsBadge  = (item.ams_linked && item.ams_discrepancy)
+          ? `<div class="amsMismatchBadge" title="AMS weight mismatch">⚠</div>` : '';
+        const amsTag    = item.ams_linked ? `<span class="tag ready">AMS</span>` : '';
+        const archTag   = item.archived   ? `<span class="tag">Archived</span>` : '';
+        const finTag    = item.finish ? `<span class="tag finish${finCls}">${h(item.finish)}</span>` : '';
+
+        return `<div class="tile ${status}${stacked}" data-id="${h(item.id)}" tabindex="0" role="button">
+  <div class="swatch" style="background:${h(item.color_hex || '#64748b')}">
+    <div class="badge">${h(badge)}</div>
+    ${amsBadge}
+    <div class="brand">${h(item.brand)}</div>
+    <div class="name">${h(item.color)}</div>
+    <div class="pct">${pct}%</div>
+  </div>
+  <div class="tileBody">
+    <div class="meta">
+      <span class="tag type${typeCls}">${h(item.material)}</span>
+      ${finTag}${amsTag}${archTag}
+    </div>
+    <div class="barWrap"><div class="bar${isLow ? ' low' : ''}" style="width:${pct}%"></div></div>
+    <div class="tileFooter">
+      <span>${h(item.total_remaining_grams)}g / ${h(item.total_grams)}g</span>
+      <span>${item.active_spool_count} spool${item.active_spool_count !== 1 ? 's' : ''}</span>
+    </div>
+  </div>
+</div>`;
+      }).join('');
+
+      /* Click / keyboard delegation */
+      grid.onclick = e => {
+        const tile = e.target.closest('.tile');
+        if (!tile) return;
+        const item = items.find(i => i.id === tile.dataset.id);
+        if (item) openUsageModal(item);
+      };
+      grid.onkeydown = e => {
+        if (e.key === 'Enter') {
+          const tile = e.target.closest('.tile');
+          if (!tile) return;
+          const item = items.find(i => i.id === tile.dataset.id);
+          if (item) openUsageModal(item);
+        }
+      };
+    }
+
+    function renderPagination() {
+      if (totalPages <= 1) { pages.style.display = 'none'; return; }
+      pages.style.display = '';
+      document.getElementById('pg-info').textContent =
+        `Page ${page} of ${totalPages} · ${totalItems} items`;
+      document.getElementById('pg-prev').disabled = page <= 1;
+      document.getElementById('pg-next').disabled = page >= totalPages;
+    }
+
+    /* ── Controls ── */
+    const debouncedLoad = debounce(() => { page = 1; load(); }, 400);
+    document.getElementById('ctrl-q').addEventListener('input', debouncedLoad);
+
+    document.getElementById('ctrl-material').addEventListener('change', e => {
+      material = e.target.value; page = 1; load();
+    });
+    document.getElementById('ctrl-sort').addEventListener('change', e => {
+      sortKey = e.target.value; page = 1; load();
+    });
+    document.getElementById('ctrl-archived').addEventListener('change', e => {
+      archived = e.target.value; page = 1; load();
+    });
+
+    stripBtn.addEventListener('click', () => {
+      lowStockOnly = lowStockOnly ? '' : 'true';
+      page = 1; load();
+    });
+
+    document.getElementById('pg-prev').addEventListener('click', () => { if (page > 1) { page--; load(); } });
+    document.getElementById('pg-next').addEventListener('click', () => { if (page < totalPages) { page++; load(); } });
+
+    /* ── Usage modal ── */
+    document.getElementById('usage-close').addEventListener('click', closeUsageModal);
+    document.getElementById('usage-cancel').addEventListener('click', closeUsageModal);
+    document.getElementById('usage-modal').addEventListener('click', e => {
+      if (e.target === document.getElementById('usage-modal')) closeUsageModal();
+    });
+    document.getElementById('usage-save').addEventListener('click', () => saveUsage());
+    document.querySelectorAll('.usage-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const grams = parseInt(btn.dataset.grams || '0', 10);
+        if (!Number.isFinite(grams) || grams <= 0) return;
+        const max = usageTarget ? Math.max(1, usageTarget.total_remaining_grams || 1) : grams;
+        document.getElementById('usage-grams').value = Math.min(grams, max);
+        document.getElementById('usage-feedback').style.display = 'none';
+      });
+    });
+
+    /* ── Delete modal ── */
+    document.getElementById('del-close').addEventListener('click',  () => { document.getElementById('del-modal').style.display = 'none'; });
+    document.getElementById('del-cancel').addEventListener('click', () => { document.getElementById('del-modal').style.display = 'none'; });
+    document.getElementById('del-modal').addEventListener('click',  e => { if (e.target === document.getElementById('del-modal')) document.getElementById('del-modal').style.display = 'none'; });
+
+    document.getElementById('del-confirm').addEventListener('click', async () => {
+      if (!deleteTarget) return;
+      const force = document.getElementById('del-force').checked ? '?force=true' : '';
+      const res = await API.del(`/inventory/${deleteTarget.id}${force}`);
+      if (res.ok) {
+        toast('Filament type deleted');
+        document.getElementById('del-modal').style.display = 'none';
+        load();
+      } else {
+        toast(res.error?.message || 'Delete failed', 'error');
+      }
+    });
+
+    /* ── WS live updates ── */
+    document.addEventListener('ws:message', e => {
+      const t = e.detail.type;
+      if (t === 'inventory.created' || t === 'inventory.updated' || t === 'inventory.deleted') load();
+    });
+
+    /* ── Boot ── */
+    document.addEventListener('DOMContentLoaded', () => { initSidebar(); load(); });
+  })();
+  </script>
+</body>
+</html>
